@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="ExpoBooth">
+<meta name="theme-color" content="#1d4ed8">
+<title>ExpoBooth</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<nav id="tabs">
+  <button data-tab="home">Home</button>
+  <button data-tab="videos">Videos</button>
+  <button data-tab="slides">Presentations</button>
+  <button data-tab="contacts">Contacts</button>
+  <button data-tab="settings">Settings</button>
+</nav>
+<p id="banner" role="alert" hidden></p>
+
+<main>
+  <section id="home">
+    <h1 id="title">Welcome</h1>
+    <div class="hero">
+      <button id="newHome" class="big">＋ New contact</button>
+      <button id="loop" class="big alt">⟳ Play demo loop</button>
+    </div>
+    <h2>Presentations</h2>
+    <div id="pinned" class="grid"></div>
+    <p id="count"></p>
+    <p id="offline" class="muted">Preparing offline use…</p>
+  </section>
+
+  <section id="videos" hidden>
+    <header><h1>Demo videos</h1>
+      <label class="button">Import videos<input id="addVideo" type="file" accept="video/*,.mp4,.mov,.m4v" multiple></label>
+    </header>
+    <div id="videoList" class="grid"></div>
+  </section>
+
+  <section id="slides" hidden>
+    <header><h1>Presentations</h1>
+      <label class="button">Import files<input id="addSlides" type="file" accept=".pdf,.ppt,.pptx" multiple></label>
+    </header>
+    <p class="muted">Tap ☆ to show a presentation on Home. PDF opens here; PowerPoint opens in another app.</p>
+    <div id="slideList" class="list"></div>
+  </section>
+
+  <section id="contacts" hidden>
+    <header><h1 id="contactTitle">Contacts</h1>
+      <span><button id="export">Export CSV</button> <button id="newContact" class="primary">New contact</button></span>
+    </header>
+    <input id="search" type="search" placeholder="Search name, company, email or phone">
+    <div id="contactList" class="list"></div>
+  </section>
+
+  <section id="settings" hidden>
+    <h1>Settings</h1>
+    <label>Event name<input data-setting="event"></label>
+    <label>Who is using this iPad<input data-setting="staff"></label>
+    <label>Products or interests (separated by commas)<textarea data-setting="interests" rows="2"></textarea></label>
+    <label>Consent sentence shown on the form<textarea data-setting="consent" rows="2"></textarea></label>
+    <p id="storage" class="muted"></p>
+  </section>
+</main>
+
+<dialog id="formDialog">
+  <form id="form" novalidate>
+    <h2 id="formTitle">New contact</h2>
+    <label>Full name *<input name="name" autocomplete="off" autocapitalize="words"></label>
+    <div class="two">
+      <label>Company<input name="company" autocomplete="off"></label>
+      <label>Job title<input name="role" autocomplete="off"></label>
+      <label>Email<input name="email" type="email" autocomplete="off" autocapitalize="none"></label>
+      <label>Phone<input name="phone" type="tel" autocomplete="off"></label>
+    </div>
+    <p id="duplicate" class="warn" hidden>This email is already registered.</p>
+    <fieldset id="interests"><legend>Interested in</legend></fieldset>
+    <fieldset><legend>Priority</legend>
+      <label class="check"><input type="radio" name="priority" value="Hot">Hot</label>
+      <label class="check"><input type="radio" name="priority" value="Warm">Warm</label>
+      <label class="check"><input type="radio" name="priority" value="Cold">Cold</label>
+    </fieldset>
+    <label>Notes<textarea name="notes" rows="3"></textarea></label>
+    <label class="check consent"><input type="checkbox" name="consent"><span id="consentText"></span></label>
+    <p id="formHint" class="muted">To save you need a name, an email or phone, and consent.</p>
+    <p id="formError" class="warn" role="alert" hidden></p>
+    <div class="actions">
+      <button type="button" id="delete" class="danger">Delete</button>
+      <span></span>
+      <button type="button" id="cancel">Cancel</button>
+      <button type="submit" id="save" class="primary">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<div id="player" class="overlay" hidden>
+  <div class="bar"><span id="playerTitle"></span><button id="next">Next</button><button id="closePlayer">Close</button></div>
+  <video id="video" playsinline controls></video>
+</div>
+
+<div id="viewer" class="overlay" hidden>
+  <div class="bar"><span id="viewerTitle"></span><button id="prev">‹ Back</button><span id="page"></span><button id="forward">Next ›</button><button id="closeViewer">Close</button></div>
+  <div id="stage"><canvas id="canvas"></canvas></div>
+</div>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
