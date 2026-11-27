@@ -324,7 +324,7 @@ function checkForm() {
 function openForm(contact = null) {
   editing = contact;
   // An unfinished new contact comes back if the app was closed.
-  const data = contact ?? read('draft', null) ?? { priority: 'Warm', interests: [] };
+  const data = contact ?? read('draft', null) ?? { priority: 'Normal', interests: [] };
   form.reset();
   for (const name of ['name', 'company', 'role', 'email', 'phone', 'notes', 'priority']) {
     field(name).value = data[name] ?? '';
