@@ -51,7 +51,8 @@
 
   <section id="contacts" hidden>
     <header><h1 id="contactTitle">Contacts</h1>
-      <span><button id="export">Export CSV</button> <button id="newContact" class="primary">New contact</button></span>
+      <span><label class="button plain">Import CSV<input id="importCsv" type="file" accept=".csv,text/csv"></label>
+        <button id="export">Export CSV</button> <button id="newContact" class="primary">New contact</button></span>
     </header>
     <input id="search" type="search" placeholder="Search name, company, email or phone">
     <div id="contactList" class="list"></div>

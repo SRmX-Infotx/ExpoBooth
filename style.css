@@ -11,7 +11,8 @@ nav button { border:0; }
 nav button[aria-current], button.primary, .button { background:var(--blue); border-color:var(--blue); color:#fff; }
 button:disabled { opacity:.4; }
 .danger { color:#dc2626; }
-.button { display:inline-block; position:relative; }
+.button { display:inline-block; position:relative; margin:0; }
+.button.plain { background:var(--card); border-color:var(--line); color:var(--text); }
 .button input { position:absolute; inset:0; opacity:0; width:100%; }
 input, textarea { font:inherit; width:100%; padding:12px; margin-top:4px; border:1px solid var(--line); border-radius:10px; background:var(--card); color:var(--text); }
 label { display:block; margin:10px 0; }

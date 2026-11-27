@@ -1,5 +1,5 @@
 import { get, getAll, put, remove } from './db.js';
-import { toCSV, localDate } from './csv.js';
+import { toCSV, fromCSV, localDate } from './csv.js';
 
 const $ = selector => document.querySelector(selector);
 const DEFAULTS = {
@@ -426,6 +426,54 @@ $('#export').onclick = async () => {
     contacts = contacts.map(c => done.find(d => d.id === c.id) ?? c);
     renderContacts();
   } catch (error) { showError('Could not mark as exported: ' + error.message); }
+};
+
+/* ---------- Import ---------- */
+// Adds contacts from a CSV file. Contacts already on this iPad are never changed.
+async function importContacts(file) {
+  const bytes = await file.arrayBuffer();
+  let text;
+  try { text = new TextDecoder('utf-8', { fatal: true }).decode(bytes); }
+  catch { text = new TextDecoder('windows-1252').decode(bytes); } // older Excel files
+  const rows = fromCSV(text);
+
+  const key = c => [c.created && localDate(c.created), c.name, c.email, c.phone].join('|').toLowerCase();
+  const ids = new Set(contacts.map(c => c.id));
+  const keys = new Set(contacts.map(key));
+  const added = [];
+  let repeated = 0, unnamed = 0, undated = 0;
+  for (const row of rows) {
+    if (!row.name) { unnamed++; continue; }
+    if ((row.id && ids.has(row.id)) || keys.has(key(row))) { repeated++; continue; }
+    const record = { ...row, id: row.id || newId(), exported: true };
+    ids.add(record.id);
+    keys.add(key(record));
+    if (record.created === null) { record.created = Date.now(); undated++; }
+    added.push(record);
+  }
+
+  const notes = [
+    repeated && `${repeated} already on this iPad or repeated (skipped)`,
+    unnamed && `${unnamed} without a name (skipped)`,
+    undated && `${undated} with an unreadable date (today's date will be used)`
+  ].filter(Boolean).join('\n');
+  if (!added.length) { alert(`No new contacts to import.\n${notes}`); return; }
+  if (!confirm(`Import ${added.length} new contacts?\n${notes}`)) return;
+  // One transaction: either all are saved or none.
+  await put('contacts', ...added);
+  contacts = [...contacts, ...added];
+  renderContacts();
+  alert(`Imported ${added.length} contacts.`);
+}
+$('#importCsv').onchange = async e => {
+  const input = e.target;
+  const file = input.files[0];
+  if (!file) return;
+  input.disabled = true;
+  try { await importContacts(file); }
+  catch (error) { showError('Import failed, nothing was added. ' + error.message); }
+  input.value = '';
+  input.disabled = false;
 };
 
 /* ---------- Settings and start ---------- */
