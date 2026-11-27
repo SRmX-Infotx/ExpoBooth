@@ -1,6 +1,6 @@
 // Saves the app on the iPad so it opens without internet.
 // Change the version number whenever you upload new app files.
-const VERSION = 'expobooth-v10';
+const VERSION = 'expobooth-v11';
 const FILES = ['./', 'index.html', 'style.css', 'app.js', 'db.js', 'csv.js', 'manifest.webmanifest',
   'icon-180.png', 'icon-192.png', 'icon-512.png', 'pdf.min.js', 'pdf.worker.min.js',
   'jbig2.wasm', 'openjpeg.wasm', 'qcms_bg.wasm', 'jbig2_nowasm_fallback.js', 'openjpeg_nowasm_fallback.js'];
