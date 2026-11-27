@@ -5,7 +5,7 @@ const $ = selector => document.querySelector(selector);
 const DEFAULTS = {
   event: '', staff: '', interests: 'Product A, Product B, Product C',
   consent: 'The visitor agrees to be contacted and to have this information stored.',
-  headerFade: 0, footerFade: 0
+  headerFade: 0, backgroundFade: 60, footerFade: 0
 };
 let files = [];
 let contacts = [];
@@ -477,8 +477,8 @@ $('#importCsv').onchange = async e => {
   input.disabled = false;
 };
 
-/* ---------- Home header and footer pictures ---------- */
-// Each picture is stored with the id "header" or "footer".
+/* ---------- Home header, background and footer pictures ---------- */
+// Each picture is stored with the id "header", "background" or "footer".
 const pictureBoxes = [...document.querySelectorAll('[data-picture]')];
 
 function renderPictures() {
@@ -494,6 +494,7 @@ function renderPictures() {
     box.querySelector('.remove').hidden = !file;
     box.querySelector('[type=range]').value = fade;
     box.querySelector('output').textContent = fade + '%';
+    if (slot === 'background') $('#backdrop').classList.toggle('has-picture', !!file);
   }
 }
 // A new picture reuses the same id, so forget the previous address.

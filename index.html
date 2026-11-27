@@ -24,10 +24,13 @@
 <main>
   <section id="home">
     <img id="headerImage" class="banner" alt="" hidden>
-    <h1 id="title">Welcome</h1>
-    <div class="hero">
-      <button id="newHome" class="big">＋ New contact</button>
-      <button id="loop" class="big alt">⟳ Play demo loop</button>
+    <div id="backdrop">
+      <img id="backgroundImage" alt="" hidden>
+      <h1 id="title">Welcome</h1>
+      <div class="hero">
+        <button id="newHome" class="big">＋ New contact</button>
+        <button id="loop" class="big alt">⟳ Play demo loop</button>
+      </div>
     </div>
     <h2>Presentations</h2>
     <div id="pinned" class="grid"></div>
@@ -72,6 +75,13 @@
       <label class="slider">Transparency: <output>0%</output><input type="range" min="0" max="90" step="5" value="0"></label>
       <img alt="Preview of the header picture" hidden>
       <small>Shown above the event name. A wide image works best, for example 2000 × 400 pixels.</small>
+    </fieldset>
+    <fieldset class="picture" data-picture="background"><legend>Home background picture</legend>
+      <label class="button">Choose picture<input type="file" accept="image/*"></label>
+      <button type="button" class="remove" hidden>Remove picture</button>
+      <label class="slider">Transparency: <output>60%</output><input type="range" min="0" max="90" step="5" value="60"></label>
+      <img alt="Preview of the background picture" hidden>
+      <small>Shown behind the event name and the two big buttons. The edges may be cropped to fill the space. Raise the transparency if the name is hard to read.</small>
     </fieldset>
     <fieldset class="picture" data-picture="footer"><legend>Home footer picture</legend>
       <label class="button">Choose picture<input type="file" accept="image/*"></label>
