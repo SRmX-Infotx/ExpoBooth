@@ -409,6 +409,11 @@ $('#prev').onclick = () => go(-1);
 $('#forward').onclick = () => go(1);
 $('#closeViewer').onclick = closeViewer;
 let startX = null;
+// Stops the iPad from zooming on repeated taps or pinches, which hid the Close button.
+$('#stage').addEventListener('touchend', e => e.preventDefault(), { passive: false });
+for (const type of ['dblclick', 'gesturestart', 'gesturechange']) {
+  $('#viewer').addEventListener(type, e => e.preventDefault(), { passive: false });
+}
 $('#stage').onpointerdown = e => { startX = e.clientX; };
 $('#stage').onpointercancel = () => { startX = null; };
 $('#stage').onpointerup = e => {
