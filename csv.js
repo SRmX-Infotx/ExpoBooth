@@ -1,6 +1,6 @@
 // Builds the CSV file text from the saved contacts.
 const HEADER = ['Date', 'Event', 'Captured by', 'Name', 'Company', 'Job title', 'Email',
-  'Phone', 'Interests', 'Priority', 'Notes', 'Consent', 'Consent text', 'ID'];
+  'Phone', 'Interests', 'Priority', 'Notes', 'Consent', 'Consent text', 'Folder', 'ID'];
 
 function escape(value) {
   let text = String(value ?? '');
@@ -15,10 +15,10 @@ export function localDate(ms) {
   return `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())} ${two(d.getHours())}:${two(d.getMinutes())}`;
 }
 
-export function toCSV(contacts) {
+export function toCSV(contacts, folderName = () => '') {
   const rows = [...contacts].sort((a, b) => a.created - b.created).map(c => [
     localDate(c.created), c.event, c.staff, c.name, c.company, c.role, c.email, c.phone,
-    c.interests.join('; '), c.priority, c.notes, c.consent ? 'Yes' : 'No', c.consentText, c.id]);
+    c.interests.join('; '), c.priority, c.notes, c.consent ? 'Yes' : 'No', c.consentText, folderName(c.folder), c.id]);
   // The first character (BOM) makes Excel show accents correctly.
   return '﻿' + [HEADER, ...rows].map(r => r.map(escape).join(',')).join('\r\n') + '\r\n';
 }
@@ -77,7 +77,7 @@ export function fromCSV(text) {
       interests: get('Interests').split(';').map(s => s.trim()).filter(Boolean),
       priority: ['High', 'Normal', 'Low'].find(p => p.toLowerCase() === priority) ?? 'Normal',
       notes: get('Notes'), consent: get('Consent').toLowerCase() === 'yes',
-      consentText: get('Consent text')
+      consentText: get('Consent text'), folderName: get('Folder')
     };
   });
 }

@@ -14,7 +14,7 @@ button:disabled { opacity:.4; }
 .button { display:inline-block; position:relative; margin:0; }
 .button.plain { background:var(--card); border-color:var(--line); color:var(--text); }
 .button input { position:absolute; inset:0; opacity:0; width:100%; }
-input, textarea { font:inherit; width:100%; padding:12px; margin-top:4px; border:1px solid var(--line); border-radius:10px; background:var(--card); color:var(--text); }
+input, textarea, select { font:inherit; width:100%; padding:12px; margin-top:4px; border:1px solid var(--line); border-radius:10px; background:var(--card); color:var(--text); }
 label { display:block; margin:10px 0; }
 .hero { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:20px; }
 .big { min-height:180px; font-size:30px; font-weight:700; border:0; border-radius:24px; background:var(--blue); color:#fff; }
@@ -54,3 +54,7 @@ fieldset { border:1px solid var(--line); border-radius:12px; margin:12px 0; disp
 .bar button { background:#222; color:#fff; border-color:#444; }
 #video { flex:1; min-height:0; width:100%; }
 #stage { flex:1; min-height:0; display:flex; align-items:center; justify-content:center; touch-action:none; padding-bottom:env(safe-area-inset-bottom); overflow:hidden; }
+.chips { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:10px; }
+.chips button { overflow-wrap:anywhere; }
+.chips button[aria-pressed=true] { background:var(--blue); border-color:var(--blue); color:#fff; }
+.folderActions { display:flex; flex-wrap:wrap; gap:8px; }

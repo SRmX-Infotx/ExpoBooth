@@ -278,6 +278,101 @@ addEventListener('keydown', e => {
 });
 addEventListener('resize', () => { if (pdf) draw().catch(() => {}); });
 
+/* ---------- Expo folders ---------- */
+// Folders are saved with the files. Each contact remembers its folder id ('' = no folder).
+const folders = () => sortedFiles('folder');
+const folderName = id => folders().find(f => f.id === id)?.name ?? '';
+const folderOf = contact => folderName(contact.folder) ? contact.folder : '';
+const sameName = (a, b) => a.localeCompare(b, undefined, { sensitivity: 'accent' }) === 0;
+// active: where new contacts are saved. view: the list on screen ('all' shows everything).
+let active = read('folder', '');
+let view = 'all';
+let renaming = null;
+
+const inView = () => view === 'all' ? contacts : contacts.filter(c => folderOf(c) === view);
+
+function setActive(id) {
+  active = id;
+  write('folder', id);
+}
+
+function renderFolders() {
+  const list = folders();
+  if (!folderName(active)) active = '';
+  if (view !== 'all' && view !== '' && !folderName(view)) view = 'all';
+  const unfiled = contacts.filter(c => !folderOf(c)).length;
+  if (view === '' && !unfiled) view = 'all';
+  const chip = (id, label, count) => el('button', {
+    textContent: `${label} (${count})`, ariaPressed: String(view === id),
+    onclick: () => {
+      view = id;
+      if (id !== 'all') setActive(id);
+      renderContacts();
+    }
+  });
+  $('#folderBar').replaceChildren(chip('all', 'All contacts', contacts.length),
+    ...list.map(f => chip(f.id, '📁 ' + f.name, contacts.filter(c => c.folder === f.id).length)),
+    ...(unfiled && list.length ? [chip('', 'No folder', unfiled)] : []));
+  const isFolder = !!folderName(view);
+  $('#renameFolder').hidden = $('#deleteFolder').hidden = !isFolder;
+  const target = list.length ? `New contacts are saved in: ${folderName(active) || 'No folder'}`
+    : 'Create a folder for each expo, for example “Expo 2026”.';
+  $('#saveTarget').textContent = target;
+  $('#homeFolder').textContent = list.length ? target : '';
+}
+
+function openFolderDialog(folder = null) {
+  renaming = folder;
+  $('#folderHeading').textContent = folder ? 'Rename folder' : 'New folder';
+  $('#folderForm').elements.folderName.value = folder?.name ?? '';
+  $('#folderError').hidden = true;
+  $('#folderDialog').showModal();
+}
+$('#newFolder').onclick = () => openFolderDialog();
+$('#renameFolder').onclick = () => openFolderDialog(folders().find(f => f.id === view));
+$('#cancelFolder').onclick = () => $('#folderDialog').close();
+
+let savingFolder = false;
+$('#folderForm').onsubmit = async e => {
+  e.preventDefault();
+  if (savingFolder) return;
+  const name = $('#folderForm').elements.folderName.value.trim();
+  const fail = message => { $('#folderError').textContent = message; $('#folderError').hidden = false; };
+  if (!name) return fail('Type a name for the folder.');
+  if (folders().some(f => f.id !== renaming?.id && sameName(f.name, name))) {
+    return fail('There is already a folder with this name.');
+  }
+  savingFolder = true;
+  const record = { id: renaming?.id ?? newId(), kind: 'folder', name };
+  try {
+    await put('files', record);
+    files = [...files.filter(f => f.id !== record.id), record];
+    if (!renaming) { view = record.id; setActive(record.id); }
+    $('#folderDialog').close();
+    renderContacts();
+  } catch (error) { fail('Not saved: ' + error.message); }
+  finally { savingFolder = false; }
+};
+
+// Deleting a folder never deletes contacts; they move to "No folder".
+$('#deleteFolder').onclick = async () => {
+  const folder = folders().find(f => f.id === view);
+  if (!folder) return;
+  const moved = contacts.filter(c => c.folder === folder.id).map(c => ({ ...c, folder: '' }));
+  if (!confirm(`Delete the folder "${folder.name}"?\n\nIts ${moved.length} contacts are NOT deleted. They move to "No folder".`)) return;
+  try {
+    if (moved.length) {
+      await put('contacts', ...moved);
+      contacts = contacts.map(c => moved.find(m => m.id === c.id) ?? c);
+    }
+    await remove('files', folder.id);
+    files = files.filter(f => f.id !== folder.id);
+    view = 'all';
+    if (active === folder.id) setActive('');
+    renderContacts();
+  } catch (error) { showError('Could not delete the folder: ' + error.message); renderContacts(); }
+};
+
 /* ---------- Contacts ---------- */
 const form = $('#form');
 const field = name => form.elements.namedItem(name);
@@ -285,20 +380,23 @@ let editing = null, original = '';
 
 function renderContacts() {
   const query = $('#search').value.trim().toLowerCase();
-  const shown = contacts
+  renderFolders();
+  const listed = inView();
+  const shown = listed
     .filter(c => `${c.name} ${c.company} ${c.email} ${c.phone}`.toLowerCase().includes(query))
     .sort((a, b) => b.created - a.created);
   $('#contactList').replaceChildren(...shown.map(c => el('div', { className: 'row' },
     el('button', { className: 'grow contact', onclick: () => openForm(c) },
       el('strong', { textContent: c.name }),
       el('small', { textContent: [c.company, c.email, c.phone].filter(Boolean).join(' · ') }),
-      el('small', { textContent: `${c.priority} · ${localDate(c.created)} · ${c.exported ? '✓ exported' : '● not exported'}` })))));
-  if (!shown.length) $('#contactList').append(el('p', { textContent: contacts.length ? 'No matches.' : 'No contacts yet.' }));
+      el('small', { textContent: `${view === 'all' && folderName(c.folder) ? '📁 ' + folderName(c.folder) + ' · ' : ''}${c.priority} · ${localDate(c.created)} · ${c.exported ? '✓ exported' : '● not exported'}` })))));
+  if (!shown.length) $('#contactList').append(el('p', { textContent: listed.length ? 'No matches.' : 'No contacts here yet.' }));
   const pending = contacts.filter(c => !c.exported).length;
-  $('#contactTitle').textContent = `Contacts (${contacts.length})`;
+  $('#contactTitle').textContent = `Contacts (${listed.length})`;
   $('#count').textContent = `${contacts.length} contacts saved, ${pending} not yet exported`;
   $('#count').className = pending ? 'warn' : 'muted';
-  $('#export').disabled = !contacts.length;
+  $('#export').disabled = !listed.length;
+  $('#export').textContent = view === 'all' ? 'Export all (CSV)' : 'Export this folder (CSV)';
 }
 $('#search').oninput = renderContacts;
 
@@ -306,6 +404,7 @@ function values() {
   return {
     name: field('name').value.trim(), company: field('company').value.trim(),
     role: field('role').value.trim(), email: field('email').value.trim(),
+    folder: field('folder').value,
     phone: field('phone').value.trim(), notes: field('notes').value.trim(),
     priority: field('priority').value, consent: field('consent').checked,
     interests: [...form.querySelectorAll('[name=interest]:checked')].map(i => i.value)
@@ -319,7 +418,7 @@ function checkForm() {
   $('#formHint').textContent = emailOK ? 'To save you need a name, an email or phone, and consent.'
     : 'Check the email address.';
   $('#duplicate').hidden = !v.email ||
-    !contacts.some(c => c.id !== editing?.id && c.email.toLowerCase() === v.email.toLowerCase());
+    !contacts.some(c => c.id !== editing?.id && folderOf(c) === v.folder && c.email.toLowerCase() === v.email.toLowerCase());
 }
 
 function openForm(contact = null) {
@@ -327,6 +426,10 @@ function openForm(contact = null) {
   // An unfinished new contact comes back if the app was closed.
   const data = contact ?? read('draft', null) ?? { priority: 'Normal', interests: [] };
   form.reset();
+  field('folder').replaceChildren(el('option', { value: '', textContent: 'No folder' }),
+    ...folders().map(f => el('option', { value: f.id, textContent: f.name })));
+  // A restored unfinished contact keeps its folder; a new one goes to the active folder.
+  field('folder').value = contact ? folderOf(contact) : folderName(data.folder) ? data.folder : active;
   for (const name of ['name', 'company', 'role', 'email', 'phone', 'notes', 'priority']) {
     field(name).value = data[name] ?? '';
   }
@@ -408,9 +511,10 @@ function download(file) {
 }
 
 $('#export').onclick = async () => {
-  const batch = [...contacts];
+  const batch = [...inView()];
+  const label = view === 'all' ? 'all' : (folderName(view) || 'no-folder').replace(/[^\p{L}\p{N}]+/gu, '-');
   const stamp = localDate(Date.now()).replace(' ', '_').replace(':', '');
-  const file = new File([toCSV(batch)], `contacts_${stamp}.csv`, { type: 'text/csv' });
+  const file = new File([toCSV(batch, folderName)], `contacts_${label}_${stamp}.csv`, { type: 'text/csv' });
   try {
     if (navigator.canShare?.({ files: [file] })) await navigator.share({ files: [file] });
     else download(file);
@@ -441,12 +545,21 @@ async function importContacts(file) {
   const key = c => [c.created && localDate(c.created), c.name, c.email, c.phone].join('|').toLowerCase();
   const ids = new Set(contacts.map(c => c.id));
   const keys = new Set(contacts.map(key));
-  const added = [];
+  const added = [], newFolders = [];
+  // Use the folder named in the file; without one, use the folder on screen.
+  const here = folderName(view) ? view : '';
+  const folderFor = (name = '') => {
+    if (!name) return here;
+    let folder = [...folders(), ...newFolders].find(f => sameName(f.name, name));
+    if (!folder) newFolders.push(folder = { id: newId(), kind: 'folder', name });
+    return folder.id;
+  };
   let repeated = 0, unnamed = 0, undated = 0;
   for (const row of rows) {
     if (!row.name) { unnamed++; continue; }
     if ((row.id && ids.has(row.id)) || keys.has(key(row))) { repeated++; continue; }
-    const record = { ...row, id: row.id || newId(), exported: true };
+    const { folderName: name, ...data } = row;
+    const record = { ...data, folder: folderFor(name), id: row.id || newId(), exported: true };
     ids.add(record.id);
     keys.add(key(record));
     if (record.created === null) { record.created = Date.now(); undated++; }
@@ -454,12 +567,17 @@ async function importContacts(file) {
   }
 
   const notes = [
+    newFolders.length && `New folders: ${newFolders.map(f => f.name).join(', ')}`,
     repeated && `${repeated} already on this iPad or repeated (skipped)`,
     unnamed && `${unnamed} without a name (skipped)`,
     undated && `${undated} with an unreadable date (today's date will be used)`
   ].filter(Boolean).join('\n');
   if (!added.length) { alert(`No new contacts to import.\n${notes}`); return; }
   if (!confirm(`Import ${added.length} new contacts?\n${notes}`)) return;
+  if (newFolders.length) {
+    await put('files', ...newFolders);
+    files = [...files, ...newFolders];
+  }
   // One transaction: either all are saved or none.
   await put('contacts', ...added);
   contacts = [...contacts, ...added];
@@ -472,7 +590,7 @@ $('#importCsv').onchange = async e => {
   if (!file) return;
   input.disabled = true;
   try { await importContacts(file); }
-  catch (error) { showError('Import failed, nothing was added. ' + error.message); }
+  catch (error) { showError('Import failed, no contacts were added. ' + error.message); renderContacts(); }
   input.value = '';
   input.disabled = false;
 };
@@ -583,6 +701,7 @@ async function start() {
   try {
     [files, contacts] = await Promise.all([getAll('files'), getAll('contacts')]);
     renderFiles();
+    view = folders().some(f => f.id === active) ? active : 'all';
     renderContacts();
     renderPictures();
     document.body.dataset.ready = 'yes';
