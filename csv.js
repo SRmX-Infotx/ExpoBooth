@@ -75,7 +75,7 @@ export function fromCSV(text) {
       name: get('Name'), company: get('Company'), role: get('Job title'), email: get('Email'),
       phone: get('Phone'),
       interests: get('Interests').split(';').map(s => s.trim()).filter(Boolean),
-      priority: ['Hot', 'Warm', 'Cold'].find(p => p.toLowerCase() === priority) ?? 'Warm',
+      priority: ['High', 'Normal', 'Low'].find(p => p.toLowerCase() === priority) ?? 'Normal',
       notes: get('Notes'), consent: get('Consent').toLowerCase() === 'yes',
       consentText: get('Consent text')
     };
