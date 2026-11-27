@@ -18,6 +18,10 @@
   <button data-tab="slides">Presentations</button>
   <button data-tab="contacts">Contacts</button>
   <button data-tab="settings">Settings</button>
+  <div class="expoRow">
+    <label>Expo <select id="expoSelect"></select></label>
+    <button id="newExpo">＋ New expo</button>
+  </div>
 </nav>
 <p id="banner" role="alert" hidden></p>
 
@@ -35,21 +39,23 @@
     <h2>Presentations</h2>
     <div id="pinned" class="grid"></div>
     <p id="count"></p>
-    <p id="homeFolder" class="muted"></p>
+    <p id="otherCount" class="warn" hidden></p>
     <p id="offline" class="muted">Preparing offline use…</p>
     <footer><img id="footerImage" class="banner" alt="" hidden></footer>
   </section>
 
   <section id="videos" hidden>
     <header><h1>Demo videos</h1>
-      <label class="button">Import videos<input id="addVideo" type="file" accept="video/*,.mp4,.mov,.m4v" multiple></label>
+      <span><button id="existingVideo">Add from this iPad</button>
+        <label class="button">Import videos<input id="addVideo" type="file" accept="video/*,.mp4,.mov,.m4v" multiple></label></span>
     </header>
     <div id="videoList" class="grid"></div>
   </section>
 
   <section id="slides" hidden>
     <header><h1>Presentations</h1>
-      <label class="button">Import files<input id="addSlides" type="file" accept=".pdf,.ppt,.pptx" multiple></label>
+      <span><button id="existingSlides">Add from this iPad</button>
+        <label class="button">Import files<input id="addSlides" type="file" accept=".pdf,.ppt,.pptx" multiple></label></span>
     </header>
     <p class="muted">Tap ☆ to show a presentation on Home. PDF opens here; PowerPoint opens in another app.</p>
     <div id="slideList" class="list"></div>
@@ -60,12 +66,8 @@
       <span><label class="button plain">Import CSV<input id="importCsv" type="file" accept=".csv,text/csv"></label>
         <button id="export">Export CSV</button> <button id="newContact" class="primary">New contact</button></span>
     </header>
-    <div id="folderBar" class="chips" aria-label="Expo folders"></div>
-    <div class="folderActions">
-      <button id="newFolder">＋ New folder</button>
-      <button id="renameFolder" hidden>Rename folder</button>
-      <button id="deleteFolder" class="danger" hidden>Delete folder</button>
-    </div>
+    <div id="viewBar" class="chips" aria-label="Which contacts to show"></div>
+    <button id="claim" hidden></button>
     <p id="saveTarget" class="muted"></p>
     <input id="search" type="search" placeholder="Search name, company, email or phone">
     <div id="contactList" class="list"></div>
@@ -73,10 +75,13 @@
 
   <section id="settings" hidden>
     <h1>Settings</h1>
-    <label>Event name<input data-setting="event"></label>
+    <h2 id="settingsFor"></h2>
+    <p><button id="renameExpo">Rename expo</button> <button id="deleteExpo" class="danger">Delete expo</button></p>
+    <p class="muted">Everything on this page applies only to the selected expo.</p>
     <label>Who is using this iPad<input data-setting="staff"></label>
     <label>Products or interests (separated by commas)<textarea data-setting="interests" rows="2"></textarea></label>
     <label>Consent sentence shown on the form<textarea data-setting="consent" rows="2"></textarea></label>
+    <label>Priority selected for new contacts<select data-setting="priority"><option>High</option><option>Normal</option><option>Low</option></select></label>
     <fieldset class="picture" data-picture="header"><legend>Home header picture</legend>
       <label class="button">Choose picture<input type="file" accept="image/*"></label>
       <button type="button" class="remove" hidden>Remove picture</button>
@@ -105,7 +110,7 @@
 <dialog id="formDialog">
   <form id="form" novalidate>
     <h2 id="formTitle">New contact</h2>
-    <label>Expo folder<select name="folder"></select></label>
+    <label>Expo<select name="folder"></select></label>
     <label>Full name *<input name="name" autocomplete="off" autocapitalize="words"></label>
     <div class="two">
       <label>Company<input name="company" autocomplete="off"></label>
@@ -133,14 +138,27 @@
   </form>
 </dialog>
 
-<dialog id="folderDialog">
-  <form id="folderForm" novalidate>
-    <h2 id="folderHeading">New folder</h2>
-    <label>Folder name<input name="folderName" maxlength="60" autocomplete="off" placeholder="Expo 2026"></label>
-    <p id="folderError" class="warn" role="alert" hidden></p>
+<dialog id="expoDialog">
+  <form id="expoForm" novalidate>
+    <h2 id="expoHeading">New expo</h2>
+    <label>Expo name<input name="expoName" maxlength="60" autocomplete="off" placeholder="Expo 2027"></label>
+    <label class="check" id="copyRow"><input type="checkbox" name="copy" checked>Copy the settings and pictures of the current expo</label>
+    <p id="expoError" class="warn" role="alert" hidden></p>
     <div class="actions"><span></span>
-      <button type="button" id="cancelFolder">Cancel</button>
+      <button type="button" id="cancelExpo">Cancel</button>
       <button type="submit" class="primary">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="libraryDialog">
+  <form id="libraryForm">
+    <h2>Add from this iPad</h2>
+    <p class="muted">Files are shared between expos and do not use extra space.</p>
+    <div id="libraryList"></div>
+    <div class="actions"><span></span>
+      <button type="button" id="cancelLibrary">Cancel</button>
+      <button type="submit" class="primary">Add selected</button>
     </div>
   </form>
 </dialog>

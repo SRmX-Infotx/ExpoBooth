@@ -57,4 +57,6 @@ fieldset { border:1px solid var(--line); border-radius:12px; margin:12px 0; disp
 .chips { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:10px; }
 .chips button { overflow-wrap:anywhere; }
 .chips button[aria-pressed=true] { background:var(--blue); border-color:var(--blue); color:#fff; }
-.folderActions { display:flex; flex-wrap:wrap; gap:8px; }
+.expoRow { display:flex; flex-basis:100%; justify-content:center; align-items:center; flex-wrap:wrap; gap:12px; }
+.expoRow label { display:flex; align-items:center; gap:8px; margin:0; font-weight:600; }
+.expoRow select { margin:0; width:auto; max-width:60vw; min-height:48px; }

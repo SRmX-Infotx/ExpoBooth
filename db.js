@@ -30,4 +30,9 @@ async function run(store, mode, work) {
 export const get = (store, id) => run(store, 'readonly', s => s.get(id));
 export const getAll = store => run(store, 'readonly', s => s.getAll());
 export const put = (store, ...values) => run(store, 'readwrite', s => { values.forEach(v => s.put(v)); });
+// Saves and deletes in one transaction: either everything happens or nothing.
+export const change = (store, puts = [], deletes = []) => run(store, 'readwrite', s => {
+  puts.forEach(v => s.put(v));
+  deletes.forEach(id => s.delete(id));
+});
 export const remove = (store, id) => run(store, 'readwrite', s => { s.delete(id); });

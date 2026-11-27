@@ -1,14 +1,16 @@
-import { get, getAll, put, remove } from './db.js';
+import { get, getAll, put, remove, change } from './db.js';
 import { toCSV, fromCSV, localDate } from './csv.js';
 
 const $ = selector => document.querySelector(selector);
 const DEFAULTS = {
-  event: '', staff: '', interests: 'Product A, Product B, Product C',
+  staff: '', interests: 'Product A, Product B, Product C',
   consent: 'The visitor agrees to be contacted and to have this information stored.',
-  headerFade: 0, backgroundFade: 60, footerFade: 0
+  priority: 'Normal', headerFade: 0, backgroundFade: 60, footerFade: 0
 };
+const SLOTS = ['header', 'background', 'footer'];
 let files = [];
 let contacts = [];
+let currentId = '';
 
 // Small preferences (settings, shortcuts, unfinished form).
 function read(key, fallback) {
@@ -18,9 +20,6 @@ function write(key, value) {
   try { localStorage.setItem('expobooth.' + key, JSON.stringify(value)); }
   catch { showError('This setting could not be saved.'); }
 }
-let settings = { ...DEFAULTS, ...read('settings', {}) };
-let pins = read('pins', []);
-
 function showError(message) {
   const banner = $('#banner');
   banner.textContent = message + ' (tap to close)';
@@ -55,18 +54,134 @@ function showTab(name) {
 }
 $('#tabs').onclick = e => { if (e.target.dataset.tab) showTab(e.target.dataset.tab); };
 
+/* ---------- Expos ---------- */
+// An expo remembers its files (ids), shortcuts, settings and pictures.
+// Files are stored once and can be shared by several expos.
+const expos = () => sortedFiles('expo');
+const findExpo = id => files.find(f => f.id === id && f.kind === 'expo');
+const currentExpo = () => findExpo(currentId);
+const expoName = id => findExpo(id)?.name ?? '';
+const expoOf = contact => findExpo(contact.folder) ? contact.folder : '';
+const sameName = (a, b) => a.localeCompare(b, undefined, { sensitivity: 'accent' }) === 0;
+const makeExpo = (name, settings = DEFAULTS, pictures = {}, id = newId()) => ({
+  id, kind: 'expo', name, content: [], pins: [], settings: { ...DEFAULTS, ...settings }, pictures: { ...pictures }
+});
+const expoFiles = kind => sortedFiles(kind).filter(f => currentExpo().content.includes(f.id));
+const usedElsewhere = (fileId, expoId) => expos().some(e => e.id !== expoId &&
+  (e.content.includes(fileId) || Object.values(e.pictures).includes(fileId)));
+
+function forgetUrl(id) {
+  URL.revokeObjectURL(urls.get(id));
+  urls.delete(id);
+}
+
+// Changes are saved one after another so that none overwrites another.
+let queue = Promise.resolve();
+function updateExpo(id, edit) {
+  const run = queue.then(async () => {
+    if (!findExpo(id)) throw new Error('This expo no longer exists.');
+    const expo = structuredClone(findExpo(id));
+    const { puts = [], deletes = [] } = edit(expo) ?? {};
+    await change('files', [expo, ...puts], deletes);
+    const saved = [expo];
+    for (const record of puts) saved.push(await get('files', record.id));
+    const replaced = new Set([...deletes, ...saved.map(f => f.id)]);
+    deletes.forEach(forgetUrl);
+    files = [...files.filter(f => !replaced.has(f.id)), ...saved];
+  });
+  queue = run.catch(() => {});
+  return run;
+}
+
+function selectExpo(id) {
+  currentId = findExpo(id) ? id : expos()[0].id;
+  write('expo', currentId);
+  view = 'expo';
+  $('#search').value = '';
+  renderAll();
+}
+
+function renderAll() {
+  $('#expoSelect').replaceChildren(...expos().map(e => el('option', { value: e.id, textContent: e.name })));
+  $('#expoSelect').value = currentId;
+  $('#title').textContent = currentExpo().name;
+  renderFiles();
+  renderContacts();
+  renderPictures();
+  renderSettings();
+}
+$('#expoSelect').onchange = e => selectExpo(e.target.value);
+
+let renaming = false, savingExpo = false;
+function openExpoDialog(rename) {
+  renaming = rename ? currentId : false;
+  const form = $('#expoForm');
+  form.reset();
+  $('#expoHeading').textContent = rename ? 'Rename expo' : 'New expo';
+  form.elements.expoName.value = rename ? currentExpo().name : '';
+  $('#copyRow').hidden = rename;
+  $('#expoError').hidden = true;
+  $('#expoDialog').showModal();
+}
+$('#newExpo').onclick = () => openExpoDialog(false);
+$('#renameExpo').onclick = () => openExpoDialog(true);
+$('#cancelExpo').onclick = () => $('#expoDialog').close();
+
+$('#expoForm').onsubmit = async e => {
+  e.preventDefault();
+  if (savingExpo) return;
+  const { expoName: input, copy } = $('#expoForm').elements;
+  const name = input.value.trim();
+  const fail = message => { $('#expoError').textContent = message; $('#expoError').hidden = false; };
+  if (!name) return fail('Type a name for the expo.');
+  if (expos().some(x => x.id !== renaming && sameName(x.name, name))) return fail('There is already an expo with this name.');
+  savingExpo = true;
+  try {
+    if (renaming) {
+      await updateExpo(renaming, x => { x.name = name; });
+      renderAll();
+    } else {
+      await queue;
+      const expo = copy.checked ? makeExpo(name, currentExpo().settings, currentExpo().pictures) : makeExpo(name);
+      await put('files', expo);
+      files.push(expo);
+      selectExpo(expo.id);
+    }
+    $('#expoDialog').close();
+  } catch (error) { fail('Not saved: ' + error.message); }
+  finally { savingExpo = false; }
+};
+
+$('#deleteExpo').onclick = async () => {
+  await queue;
+  const expo = currentExpo();
+  if (expos().length === 1) return showError('You need at least one expo. Create another one first.');
+  const count = contacts.filter(c => c.folder === expo.id).length;
+  if (count) return showError(`This expo has ${count} contacts. Export them, then move or delete them before deleting the expo.`);
+  const unused = [...new Set([...expo.content, ...Object.values(expo.pictures)])]
+    .filter(id => !usedElsewhere(id, expo.id));
+  if (!confirm(`Delete the expo "${expo.name}"?\n\n${unused.length} files and pictures used only by this expo will be deleted from the iPad.`)) return;
+  try {
+    await change('files', [], [expo.id, ...unused]);
+    unused.forEach(forgetUrl);
+    files = files.filter(f => f.id !== expo.id && !unused.includes(f.id));
+    selectExpo(expos()[0].id);
+  } catch (error) { showError('Could not delete the expo: ' + error.message); }
+};
+
 /* ---------- Lists ---------- */
 function renderFiles() {
-  const videos = sortedFiles('video');
+  const videos = expoFiles('video');
   $('#loop').disabled = !videos.length;
 
   $('#videoList').replaceChildren(...videos.map((file, index) => el('div', { className: 'card' },
     el('video', { src: urlFor(file) + '#t=0.5', preload: 'metadata', muted: true, playsInline: true }),
     el('button', { className: 'tile play', textContent: '▶ ' + title(file), onclick: () => play(videos, index) }),
-    el('button', { className: 'danger', textContent: 'Delete', onclick: () => deleteFile(file) }))));
-  if (!videos.length) $('#videoList').append(el('p', { textContent: 'No videos yet. Tap Import videos.' }));
+    el('button', { className: 'danger', textContent: 'Remove', onclick: () => removeFile(file) }))));
+  if (!videos.length) $('#videoList').append(el('p', { textContent: 'No videos in this expo. Import videos or add them from this iPad.' }));
 
-  const slides = sortedFiles('slides');
+  const slides = expoFiles('slides');
+  const pins = currentExpo().pins;
   $('#slideList').replaceChildren(...slides.map(file => el('div', { className: 'row' },
     el('button', {
       className: 'star', textContent: pins.includes(file.id) ? '★' : '☆',
@@ -74,8 +189,8 @@ function renderFiles() {
     }),
     el('button', { className: 'grow', onclick: () => openSlides(file) },
       title(file), el('small', { textContent: extension(file).toUpperCase() })),
-    el('button', { className: 'danger', textContent: 'Delete', onclick: () => deleteFile(file) }))));
-  if (!slides.length) $('#slideList').append(el('p', { textContent: 'No presentations yet. Tap Import files.' }));
+    el('button', { className: 'danger', textContent: 'Remove', onclick: () => removeFile(file) }))));
+  if (!slides.length) $('#slideList').append(el('p', { textContent: 'No presentations in this expo. Import files or add them from this iPad.' }));
 
   const pinned = pins.map(id => slides.find(f => f.id === id)).filter(Boolean);
   $('#pinned').replaceChildren(...pinned.map(file => el('div', { className: 'card' },
@@ -85,16 +200,21 @@ function renderFiles() {
   }));
 }
 
-function togglePin(id) {
-  pins = pins.includes(id) ? pins.filter(p => p !== id) : [...pins, id];
-  write('pins', pins);
-  renderFiles();
+async function togglePin(id) {
+  try {
+    await updateExpo(currentId, e => {
+      e.pins = e.pins.includes(id) ? e.pins.filter(p => p !== id) : [...e.pins, id];
+    });
+    renderFiles();
+  } catch (error) { showError('Could not save the shortcut: ' + error.message); }
 }
 
 async function importFiles(input, kind, allowed) {
   const label = input.parentElement;
   const text = label.firstChild.textContent;
   const chosen = [...input.files];
+  // The files go to the expo selected when the import started.
+  const expoId = currentId;
   label.firstChild.textContent = 'Importing…';
   input.disabled = true;
   const failed = [];
@@ -108,8 +228,10 @@ async function importFiles(input, kind, allowed) {
     try {
       // The database keeps its own copy; large videos are not loaded into memory.
       const id = newId();
-      await put('files', { id, kind, name, blob: source });
-      files.push(await get('files', id));
+      await updateExpo(expoId, e => {
+        e.content.push(id);
+        return { puts: [{ id, kind, name, blob: source }] };
+      });
     } catch (error) {
       failed.push(`${source.name} (${error.name === 'QuotaExceededError' ? 'not enough space' : error.message})`);
     }
@@ -123,17 +245,42 @@ async function importFiles(input, kind, allowed) {
 $('#addVideo').onchange = e => importFiles(e.target, 'video', ['mp4', 'mov', 'm4v', 'webm']);
 $('#addSlides').onchange = e => importFiles(e.target, 'slides', ['pdf', 'ppt', 'pptx']);
 
-async function deleteFile(file) {
-  if (!confirm(`Delete "${file.name}" from the app?`)) return;
+function openLibrary(kind) {
+  const available = sortedFiles(kind).filter(f => !currentExpo().content.includes(f.id));
+  $('#libraryList').replaceChildren(...available.map(f => el('label', { className: 'check' },
+    el('input', { type: 'checkbox', value: f.id }), f.name)));
+  if (!available.length) $('#libraryList').append(el('p', { textContent: 'There are no other files on this iPad to add.' }));
+  $('#libraryDialog').showModal();
+}
+$('#existingVideo').onclick = () => openLibrary('video');
+$('#existingSlides').onclick = () => openLibrary('slides');
+$('#cancelLibrary').onclick = () => $('#libraryDialog').close();
+$('#libraryForm').onsubmit = async e => {
+  e.preventDefault();
+  const ids = [...$('#libraryList').querySelectorAll('input:checked')].map(i => i.value);
+  $('#libraryDialog').close();
+  if (!ids.length) return;
   try {
-    await remove('files', file.id);
-    files = files.filter(f => f.id !== file.id);
-    pins = pins.filter(p => p !== file.id);
-    write('pins', pins);
-    URL.revokeObjectURL(urls.get(file.id));
-    urls.delete(file.id);
+    await updateExpo(currentId, x => { x.content = [...new Set([...x.content, ...ids])]; });
     renderFiles();
-  } catch (error) { showError('Could not delete: ' + error.message); }
+  } catch (error) { showError('Could not add the files: ' + error.message); }
+};
+
+async function removeFile(file) {
+  await queue;
+  const expo = currentExpo();
+  const shared = usedElsewhere(file.id, expo.id);
+  const message = shared ? 'It stays in the other expos that use it.'
+    : 'No other expo uses it, so it will be deleted from the iPad.';
+  if (!confirm(`Remove "${file.name}" from ${expo.name}?\n\n${message}`)) return;
+  try {
+    await updateExpo(expo.id, e => {
+      e.content = e.content.filter(id => id !== file.id);
+      e.pins = e.pins.filter(id => id !== file.id);
+      return { deletes: shared ? [] : [file.id] };
+    });
+    renderFiles();
+  } catch (error) { showError('Could not remove the file: ' + error.message); }
 }
 
 /* ---------- Keep the screen awake ---------- */
@@ -169,7 +316,7 @@ function closePlayer() {
   video.removeAttribute('src');
   video.load();
 }
-$('#loop').onclick = () => { errors = 0; play(sortedFiles('video'), 0); };
+$('#loop').onclick = () => { errors = 0; play(expoFiles('video'), 0); };
 $('#next').onclick = () => play(playlist, current + 1);
 $('#closePlayer').onclick = closePlayer;
 
@@ -278,109 +425,32 @@ addEventListener('keydown', e => {
 });
 addEventListener('resize', () => { if (pdf) draw().catch(() => {}); });
 
-/* ---------- Expo folders ---------- */
-// Folders are saved with the files. Each contact remembers its folder id ('' = no folder).
-const folders = () => sortedFiles('folder');
-const folderName = id => folders().find(f => f.id === id)?.name ?? '';
-const folderOf = contact => folderName(contact.folder) ? contact.folder : '';
-const sameName = (a, b) => a.localeCompare(b, undefined, { sensitivity: 'accent' }) === 0;
-// active: where new contacts are saved. view: the list on screen ('all' shows everything).
-let active = read('folder', '');
-let view = 'all';
-let renaming = null;
-
-const inView = () => view === 'all' ? contacts : contacts.filter(c => folderOf(c) === view);
-
-function setActive(id) {
-  active = id;
-  write('folder', id);
-}
-
-function renderFolders() {
-  const list = folders();
-  if (!folderName(active)) active = '';
-  if (view !== 'all' && view !== '' && !folderName(view)) view = 'all';
-  const unfiled = contacts.filter(c => !folderOf(c)).length;
-  if (view === '' && !unfiled) view = 'all';
-  const chip = (id, label, count) => el('button', {
-    textContent: `${label} (${count})`, ariaPressed: String(view === id),
-    onclick: () => {
-      view = id;
-      if (id !== 'all') setActive(id);
-      renderContacts();
-    }
-  });
-  $('#folderBar').replaceChildren(chip('all', 'All contacts', contacts.length),
-    ...list.map(f => chip(f.id, '📁 ' + f.name, contacts.filter(c => c.folder === f.id).length)),
-    ...(unfiled && list.length ? [chip('', 'No folder', unfiled)] : []));
-  const isFolder = !!folderName(view);
-  $('#renameFolder').hidden = $('#deleteFolder').hidden = !isFolder;
-  const target = list.length ? `New contacts are saved in: ${folderName(active) || 'No folder'}`
-    : 'Create a folder for each expo, for example “Expo 2026”.';
-  $('#saveTarget').textContent = target;
-  $('#homeFolder').textContent = list.length ? target : '';
-}
-
-function openFolderDialog(folder = null) {
-  renaming = folder;
-  $('#folderHeading').textContent = folder ? 'Rename folder' : 'New folder';
-  $('#folderForm').elements.folderName.value = folder?.name ?? '';
-  $('#folderError').hidden = true;
-  $('#folderDialog').showModal();
-}
-$('#newFolder').onclick = () => openFolderDialog();
-$('#renameFolder').onclick = () => openFolderDialog(folders().find(f => f.id === view));
-$('#cancelFolder').onclick = () => $('#folderDialog').close();
-
-let savingFolder = false;
-$('#folderForm').onsubmit = async e => {
-  e.preventDefault();
-  if (savingFolder) return;
-  const name = $('#folderForm').elements.folderName.value.trim();
-  const fail = message => { $('#folderError').textContent = message; $('#folderError').hidden = false; };
-  if (!name) return fail('Type a name for the folder.');
-  if (folders().some(f => f.id !== renaming?.id && sameName(f.name, name))) {
-    return fail('There is already a folder with this name.');
-  }
-  savingFolder = true;
-  const record = { id: renaming?.id ?? newId(), kind: 'folder', name };
-  try {
-    await put('files', record);
-    files = [...files.filter(f => f.id !== record.id), record];
-    if (!renaming) { view = record.id; setActive(record.id); }
-    $('#folderDialog').close();
-    renderContacts();
-  } catch (error) { fail('Not saved: ' + error.message); }
-  finally { savingFolder = false; }
-};
-
-// Deleting a folder never deletes contacts; they move to "No folder".
-$('#deleteFolder').onclick = async () => {
-  const folder = folders().find(f => f.id === view);
-  if (!folder) return;
-  const moved = contacts.filter(c => c.folder === folder.id).map(c => ({ ...c, folder: '' }));
-  if (!confirm(`Delete the folder "${folder.name}"?\n\nIts ${moved.length} contacts are NOT deleted. They move to "No folder".`)) return;
-  try {
-    if (moved.length) {
-      await put('contacts', ...moved);
-      contacts = contacts.map(c => moved.find(m => m.id === c.id) ?? c);
-    }
-    await remove('files', folder.id);
-    files = files.filter(f => f.id !== folder.id);
-    view = 'all';
-    if (active === folder.id) setActive('');
-    renderContacts();
-  } catch (error) { showError('Could not delete the folder: ' + error.message); renderContacts(); }
-};
-
 /* ---------- Contacts ---------- */
 const form = $('#form');
 const field = name => form.elements.namedItem(name);
 let editing = null, original = '';
+// Which list is on screen: this expo, contacts without an expo, or all.
+let view = 'expo';
+
+const inView = () => view === 'all' ? contacts
+  : contacts.filter(c => expoOf(c) === (view === 'none' ? '' : currentId));
 
 function renderContacts() {
+  const unassigned = contacts.filter(c => !expoOf(c));
+  if (view === 'none' && !unassigned.length) view = 'expo';
+  const chip = (id, label, count) => el('button', {
+    textContent: `${label} (${count})`, ariaPressed: String(view === id),
+    onclick: () => { view = id; renderContacts(); }
+  });
+  $('#viewBar').replaceChildren(
+    chip('expo', 'This expo', contacts.filter(c => c.folder === currentId).length),
+    ...(unassigned.length ? [chip('none', 'Unassigned', unassigned.length)] : []),
+    chip('all', 'All expos', contacts.length));
+  $('#claim').hidden = view !== 'none';
+  $('#claim').textContent = `Move all ${unassigned.length} to ${currentExpo().name}`;
+  $('#saveTarget').textContent = `New contacts are saved in: ${currentExpo().name}`;
+
   const query = $('#search').value.trim().toLowerCase();
-  renderFolders();
   const listed = inView();
   const shown = listed
     .filter(c => `${c.name} ${c.company} ${c.email} ${c.phone}`.toLowerCase().includes(query))
@@ -389,16 +459,33 @@ function renderContacts() {
     el('button', { className: 'grow contact', onclick: () => openForm(c) },
       el('strong', { textContent: c.name }),
       el('small', { textContent: [c.company, c.email, c.phone].filter(Boolean).join(' · ') }),
-      el('small', { textContent: `${view === 'all' && folderName(c.folder) ? '📁 ' + folderName(c.folder) + ' · ' : ''}${c.priority} · ${localDate(c.created)} · ${c.exported ? '✓ exported' : '● not exported'}` })))));
+      el('small', { textContent: `${view === 'all' ? (expoName(c.folder) || 'Unassigned') + ' · ' : ''}${c.priority} · ${localDate(c.created)} · ${c.exported ? '✓ exported' : '● not exported'}` })))));
   if (!shown.length) $('#contactList').append(el('p', { textContent: listed.length ? 'No matches.' : 'No contacts here yet.' }));
-  const pending = contacts.filter(c => !c.exported).length;
   $('#contactTitle').textContent = `Contacts (${listed.length})`;
-  $('#count').textContent = `${contacts.length} contacts saved, ${pending} not yet exported`;
+
+  const here = contacts.filter(c => c.folder === currentId);
+  const pending = here.filter(c => !c.exported).length;
+  $('#count').textContent = `${here.length} contacts in this expo, ${pending} not yet exported`;
   $('#count').className = pending ? 'warn' : 'muted';
+  const others = contacts.filter(c => c.folder !== currentId && !c.exported).length;
+  $('#otherCount').hidden = !others;
+  $('#otherCount').textContent = `${others} contacts outside this expo are not yet exported`;
   $('#export').disabled = !listed.length;
-  $('#export').textContent = view === 'all' ? 'Export all (CSV)' : 'Export this folder (CSV)';
+  $('#export').textContent = { expo: 'Export this expo (CSV)', none: 'Export unassigned (CSV)', all: 'Export all (CSV)' }[view];
 }
 $('#search').oninput = renderContacts;
+
+$('#claim').onclick = async () => {
+  const expo = currentExpo();
+  const moved = contacts.filter(c => !expoOf(c)).map(c => ({ ...c, folder: expo.id, exported: false }));
+  if (!confirm(`Move ${moved.length} unassigned contacts to ${expo.name}?`)) return;
+  try {
+    await put('contacts', ...moved);
+    contacts = contacts.map(c => moved.find(m => m.id === c.id) ?? c);
+    view = 'expo';
+    renderContacts();
+  } catch (error) { showError('Could not move the contacts: ' + error.message); }
+};
 
 function values() {
   return {
@@ -418,29 +505,35 @@ function checkForm() {
   $('#formHint').textContent = emailOK ? 'To save you need a name, an email or phone, and consent.'
     : 'Check the email address.';
   $('#duplicate').hidden = !v.email ||
-    !contacts.some(c => c.id !== editing?.id && folderOf(c) === v.folder && c.email.toLowerCase() === v.email.toLowerCase());
+    !contacts.some(c => c.id !== editing?.id && expoOf(c) === v.folder && c.email.toLowerCase() === v.email.toLowerCase());
+}
+
+// The product list and consent sentence belong to the chosen expo.
+function fillExpoFields(selected) {
+  const settings = findExpo(field('folder').value)?.settings ?? currentExpo().settings;
+  const options = [...new Set([
+    ...settings.interests.split(',').map(s => s.trim()).filter(Boolean), ...selected])];
+  $('#interests').replaceChildren(el('legend', { textContent: 'Interested in' }),
+    ...options.map(option => el('label', { className: 'check' },
+      el('input', { type: 'checkbox', name: 'interest', value: option, checked: selected.includes(option) }),
+      option)));
+  $('#consentText').textContent = editing?.consentText || settings.consent;
 }
 
 function openForm(contact = null) {
   editing = contact;
   // An unfinished new contact comes back if the app was closed.
-  const data = contact ?? read('draft', null) ?? { priority: 'Normal', interests: [] };
+  const data = contact ?? read('draft', null) ?? { priority: currentExpo().settings.priority, interests: [] };
   form.reset();
-  field('folder').replaceChildren(el('option', { value: '', textContent: 'No folder' }),
-    ...folders().map(f => el('option', { value: f.id, textContent: f.name })));
-  // A restored unfinished contact keeps its folder; a new one goes to the active folder.
-  field('folder').value = contact ? folderOf(contact) : folderName(data.folder) ? data.folder : active;
   for (const name of ['name', 'company', 'role', 'email', 'phone', 'notes', 'priority']) {
     field(name).value = data[name] ?? '';
   }
   field('consent').checked = !!data.consent;
-  const options = [...new Set([
-    ...settings.interests.split(',').map(s => s.trim()).filter(Boolean), ...(data.interests ?? [])])];
-  $('#interests').replaceChildren(el('legend', { textContent: 'Interested in' }),
-    ...options.map(option => el('label', { className: 'check' },
-      el('input', { type: 'checkbox', name: 'interest', value: option, checked: !!data.interests?.includes(option) }),
-      option)));
-  $('#consentText').textContent = contact?.consentText ?? settings.consent;
+  field('folder').replaceChildren(
+    ...(contact && !expoOf(contact) ? [el('option', { value: '', textContent: 'Unassigned' })] : []),
+    ...expos().map(e => el('option', { value: e.id, textContent: e.name })));
+  field('folder').value = contact ? expoOf(contact) : findExpo(data.folder) ? data.folder : currentId;
+  fillExpoFields(data.interests ?? []);
   $('#formTitle').textContent = contact ? 'Edit contact' : 'New contact';
   $('#delete').hidden = !contact;
   $('#formError').hidden = true;
@@ -452,6 +545,13 @@ function openForm(contact = null) {
 form.oninput = () => {
   checkForm();
   if (!editing) write('draft', values());
+};
+form.onchange = e => {
+  if (e.target.name !== 'folder') return;
+  // A new contact must agree to the sentence of the newly chosen expo.
+  if (!editing) field('consent').checked = false;
+  fillExpoFields(values().interests);
+  form.oninput();
 };
 
 function closeForm() {
@@ -479,8 +579,9 @@ form.onsubmit = async e => {
   $('#save').disabled = true;
   const record = {
     id: editing?.id ?? newId(), created: editing?.created ?? Date.now(),
-    event: editing?.event ?? settings.event, staff: editing?.staff ?? settings.staff,
-    consentText: editing?.consentText ?? settings.consent, ...values(), exported: false
+    event: editing?.event ?? expoName(field('folder').value),
+    staff: editing?.staff ?? findExpo(field('folder').value).settings.staff,
+    consentText: editing?.consentText || $('#consentText').textContent, ...values(), exported: false
   };
   try {
     await put('contacts', record);
@@ -512,9 +613,10 @@ function download(file) {
 
 $('#export').onclick = async () => {
   const batch = [...inView()];
-  const label = view === 'all' ? 'all' : (folderName(view) || 'no-folder').replace(/[^\p{L}\p{N}]+/gu, '-');
+  const label = view === 'expo' ? currentExpo().name.replace(/[^\p{L}\p{N}]+/gu, '-')
+    : view === 'none' ? 'unassigned' : 'all';
   const stamp = localDate(Date.now()).replace(' ', '_').replace(':', '');
-  const file = new File([toCSV(batch, folderName)], `contacts_${label}_${stamp}.csv`, { type: 'text/csv' });
+  const file = new File([toCSV(batch, expoName)], `contacts_${label}_${stamp}.csv`, { type: 'text/csv' });
   try {
     if (navigator.canShare?.({ files: [file] })) await navigator.share({ files: [file] });
     else download(file);
@@ -545,21 +647,21 @@ async function importContacts(file) {
   const key = c => [c.created && localDate(c.created), c.name, c.email, c.phone].join('|').toLowerCase();
   const ids = new Set(contacts.map(c => c.id));
   const keys = new Set(contacts.map(key));
-  const added = [], newFolders = [];
-  // Use the folder named in the file; without one, use the folder on screen.
-  const here = folderName(view) ? view : '';
-  const folderFor = (name = '') => {
-    if (!name) return here;
-    let folder = [...folders(), ...newFolders].find(f => sameName(f.name, name));
-    if (!folder) newFolders.push(folder = { id: newId(), kind: 'folder', name });
-    return folder.id;
+  const added = [], newExpos = [];
+  // Use the expo named in the file; without an expo column, use the selected one.
+  const expoFor = name => {
+    if (name === null) return currentId;
+    if (!name) return '';
+    let expo = [...expos(), ...newExpos].find(e => sameName(e.name, name));
+    if (!expo) newExpos.push(expo = makeExpo(name, currentExpo().settings));
+    return expo.id;
   };
   let repeated = 0, unnamed = 0, undated = 0;
   for (const row of rows) {
     if (!row.name) { unnamed++; continue; }
     if ((row.id && ids.has(row.id)) || keys.has(key(row))) { repeated++; continue; }
-    const { folderName: name, ...data } = row;
-    const record = { ...data, folder: folderFor(name), id: row.id || newId(), exported: true };
+    const { expoName: name, ...data } = row;
+    const record = { ...data, folder: expoFor(name), id: row.id || newId(), exported: true };
     ids.add(record.id);
     keys.add(key(record));
     if (record.created === null) { record.created = Date.now(); undated++; }
@@ -567,21 +669,21 @@ async function importContacts(file) {
   }
 
   const notes = [
-    newFolders.length && `New folders: ${newFolders.map(f => f.name).join(', ')}`,
+    newExpos.length && `New expos: ${newExpos.map(e => e.name).join(', ')}`,
     repeated && `${repeated} already on this iPad or repeated (skipped)`,
     unnamed && `${unnamed} without a name (skipped)`,
     undated && `${undated} with an unreadable date (today's date will be used)`
   ].filter(Boolean).join('\n');
   if (!added.length) { alert(`No new contacts to import.\n${notes}`); return; }
   if (!confirm(`Import ${added.length} new contacts?\n${notes}`)) return;
-  if (newFolders.length) {
-    await put('files', ...newFolders);
-    files = [...files, ...newFolders];
+  if (newExpos.length) {
+    await put('files', ...newExpos);
+    files = [...files, ...newExpos];
   }
   // One transaction: either all are saved or none.
   await put('contacts', ...added);
   contacts = [...contacts, ...added];
-  renderContacts();
+  renderAll();
   alert(`Imported ${added.length} contacts.`);
 }
 $('#importCsv').onchange = async e => {
@@ -595,43 +697,49 @@ $('#importCsv').onchange = async e => {
   input.disabled = false;
 };
 
-/* ---------- Home header, background and footer pictures ---------- */
-// Each picture is stored with the id "header", "background" or "footer".
+/* ---------- Header, background and footer pictures ---------- */
 const pictureBoxes = [...document.querySelectorAll('[data-picture]')];
+
+function showFade(box, fade) {
+  const slot = box.dataset.picture;
+  for (const image of [$(`#${slot}Image`), box.querySelector('img')]) image.style.opacity = 1 - fade / 100;
+  box.querySelector('output').textContent = fade + '%';
+}
 
 function renderPictures() {
   for (const box of pictureBoxes) {
     const slot = box.dataset.picture;
-    const file = files.find(f => f.id === slot);
-    const fade = settings[slot + 'Fade'];
+    const file = files.find(f => f.id === currentExpo().pictures[slot]);
     for (const image of [$(`#${slot}Image`), box.querySelector('img')]) {
       if (file) image.src = urlFor(file); else image.removeAttribute('src');
       image.hidden = !file;
-      image.style.opacity = 1 - fade / 100;
     }
     box.querySelector('.remove').hidden = !file;
-    box.querySelector('[type=range]').value = fade;
-    box.querySelector('output').textContent = fade + '%';
+    box.querySelector('[type=range]').value = currentExpo().settings[slot + 'Fade'];
+    showFade(box, currentExpo().settings[slot + 'Fade']);
     if (slot === 'background') $('#backdrop').classList.toggle('has-picture', !!file);
   }
 }
-// A new picture reuses the same id, so forget the previous address.
-function forgetUrl(id) {
-  URL.revokeObjectURL(urls.get(id));
-  urls.delete(id);
+
+// Replaces or removes a picture; the old one is deleted only if no expo uses it.
+function setPicture(expoId, slot, record) {
+  return updateExpo(expoId, e => {
+    const old = e.pictures[slot];
+    if (record) e.pictures[slot] = record.id; else delete e.pictures[slot];
+    const keep = !old || usedElsewhere(old, e.id) || Object.values(e.pictures).includes(old) || e.content.includes(old);
+    return { puts: record ? [record] : [], deletes: keep ? [] : [old] };
+  });
 }
 
 async function choosePicture(slot, input) {
   const source = input.files[0];
   if (!source) return;
+  const expoId = currentId;
   const test = URL.createObjectURL(source);
   try {
     // Check that it really is a picture before replacing the current one.
     await Object.assign(new Image(), { src: test }).decode();
-    await put('files', { id: slot, kind: slot, name: source.name, blob: source });
-    const saved = await get('files', slot);
-    forgetUrl(slot);
-    files = [...files.filter(f => f.id !== slot), saved];
+    await setPicture(expoId, slot, { id: newId(), kind: 'picture', name: source.name, blob: source });
     renderPictures();
   } catch (error) {
     showError(error.name === 'EncodingError' ? 'This file is not a picture the iPad can show.'
@@ -643,13 +751,16 @@ async function choosePicture(slot, input) {
 }
 
 async function removePicture(slot) {
-  if (!confirm(`Remove the ${slot} picture?`)) return;
+  if (!confirm(`Remove the ${slot} picture from this expo?`)) return;
   try {
-    await remove('files', slot);
-    files = files.filter(f => f.id !== slot);
-    forgetUrl(slot);
+    await setPicture(currentId, slot);
     renderPictures();
   } catch (error) { showError('Could not remove the picture: ' + error.message); }
+}
+
+function saveSetting(key, value) {
+  updateExpo(currentId, e => { e.settings[key] = value; })
+    .catch(error => showError('This setting could not be saved: ' + error.message));
 }
 
 for (const box of pictureBoxes) {
@@ -657,22 +768,39 @@ for (const box of pictureBoxes) {
   box.querySelector('[type=file]').onchange = e => choosePicture(slot, e.target);
   box.querySelector('.remove').onclick = () => removePicture(slot);
   box.querySelector('[type=range]').oninput = e => {
-    settings[slot + 'Fade'] = Number(e.target.value);
-    write('settings', settings);
-    renderPictures();
+    showFade(box, Number(e.target.value));
+    saveSetting(slot + 'Fade', Number(e.target.value));
   };
 }
 
 /* ---------- Settings and start ---------- */
-function applySettings() { $('#title').textContent = settings.event || 'Welcome'; }
+function renderSettings() {
+  $('#settingsFor').textContent = currentExpo().name;
+  document.querySelectorAll('[data-setting]').forEach(input => {
+    input.value = currentExpo().settings[input.dataset.setting];
+  });
+}
 document.querySelectorAll('[data-setting]').forEach(input => {
-  input.value = settings[input.dataset.setting];
-  input.oninput = () => {
-    settings[input.dataset.setting] = input.value;
-    write('settings', settings);
-    applySettings();
-  };
+  input.oninput = () => saveSetting(input.dataset.setting, input.value);
 });
+
+// Turns the data of earlier versions into expos. Nothing is deleted.
+async function createFirstExpos() {
+  const old = read('settings', {});
+  const { event, ...settings } = old;
+  const folders = sortedFiles('folder');
+  // Earlier folders keep their id, so their contacts stay inside.
+  const created = folders.length ? folders.map(f => makeExpo(f.name, settings, {}, f.id))
+    : [makeExpo(event?.trim() || 'My first expo', settings)];
+  const first = created.find(e => e.id === read('folder', '')) ?? created[0];
+  first.content = files.filter(f => f.kind === 'video' || f.kind === 'slides').map(f => f.id);
+  first.pins = read('pins', []).filter(id => first.content.includes(id));
+  for (const slot of SLOTS) if (files.some(f => f.id === slot)) first.pictures[slot] = slot;
+  await change('files', created);
+  const ids = new Set(created.map(e => e.id));
+  files = [...files.filter(f => !ids.has(f.id)), ...created];
+  write('expo', first.id);
+}
 
 async function showStorage() {
   try {
@@ -694,20 +822,19 @@ async function offline() {
 }
 
 async function start() {
-  applySettings();
   showTab('home');
   offline();
   navigator.storage?.persist?.().catch(() => {});
+  // Nothing can be edited until the saved data is loaded.
+  const locked = [$('main'), $('.expoRow')];
+  locked.forEach(node => { node.inert = true; });
   try {
     [files, contacts] = await Promise.all([getAll('files'), getAll('contacts')]);
-    renderFiles();
-    view = folders().some(f => f.id === active) ? active : 'all';
-    renderContacts();
-    renderPictures();
+    if (!expos().length) await createFirstExpos();
+    selectExpo(read('expo', ''));
+    locked.forEach(node => { node.inert = false; });
     document.body.dataset.ready = 'yes';
   } catch (error) {
-    // Block editing so nothing is lost or overwritten.
-    document.querySelector('main').inert = true;
     showError('Saved data could not be opened. Close the app and open it again. ' + error.message);
   }
 }
