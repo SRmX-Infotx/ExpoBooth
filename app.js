@@ -105,6 +105,7 @@ function renderAll() {
   $('#expoSelect').replaceChildren(...expos().map(e => el('option', { value: e.id, textContent: e.name })));
   $('#expoSelect').value = currentId;
   $('#title').textContent = currentExpo().name;
+  document.querySelectorAll('.expoName').forEach(node => { node.textContent = currentExpo().name; });
   renderFiles();
   renderContacts();
   renderPictures();
@@ -826,13 +827,12 @@ async function start() {
   offline();
   navigator.storage?.persist?.().catch(() => {});
   // Nothing can be edited until the saved data is loaded.
-  const locked = [$('main'), $('.expoRow')];
-  locked.forEach(node => { node.inert = true; });
+  $('main').inert = true;
   try {
     [files, contacts] = await Promise.all([getAll('files'), getAll('contacts')]);
     if (!expos().length) await createFirstExpos();
     selectExpo(read('expo', ''));
-    locked.forEach(node => { node.inert = false; });
+    $('main').inert = false;
     document.body.dataset.ready = 'yes';
   } catch (error) {
     showError('Saved data could not be opened. Close the app and open it again. ' + error.message);

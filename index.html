@@ -17,11 +17,8 @@
   <button data-tab="videos">Videos</button>
   <button data-tab="slides">Presentations</button>
   <button data-tab="contacts">Contacts</button>
+  <button data-tab="expos">Expos</button>
   <button data-tab="settings">Settings</button>
-  <div class="expoRow">
-    <label>Expo <select id="expoSelect"></select></label>
-    <button id="newExpo">＋ New expo</button>
-  </div>
 </nav>
 <p id="banner" role="alert" hidden></p>
 
@@ -49,6 +46,7 @@
       <span><button id="existingVideo">Add from this iPad</button>
         <label class="button">Import videos<input id="addVideo" type="file" accept="video/*,.mp4,.mov,.m4v" multiple></label></span>
     </header>
+    <p class="muted">Expo: <strong class="expoName"></strong></p>
     <div id="videoList" class="grid"></div>
   </section>
 
@@ -58,6 +56,7 @@
         <label class="button">Import files<input id="addSlides" type="file" accept=".pdf,.ppt,.pptx" multiple></label></span>
     </header>
     <p class="muted">Tap ☆ to show a presentation on Home. PDF opens here; PowerPoint opens in another app.</p>
+    <p class="muted">Expo: <strong class="expoName"></strong></p>
     <div id="slideList" class="list"></div>
   </section>
 
@@ -71,6 +70,15 @@
     <p id="saveTarget" class="muted"></p>
     <input id="search" type="search" placeholder="Search name, company, email or phone">
     <div id="contactList" class="list"></div>
+  </section>
+
+  <section id="expos" hidden>
+    <h1>Expos</h1>
+    <p class="muted">The selected expo decides which videos, presentations, contacts and settings you see.</p>
+  <div class="expoRow">
+    <label>Expo <select id="expoSelect"></select></label>
+    <button id="newExpo">＋ New expo</button>
+  </div>
   </section>
 
   <section id="settings" hidden>
