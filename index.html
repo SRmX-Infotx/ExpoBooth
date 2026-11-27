@@ -23,6 +23,7 @@
 
 <main>
   <section id="home">
+    <img id="headerImage" class="banner" alt="" hidden>
     <h1 id="title">Welcome</h1>
     <div class="hero">
       <button id="newHome" class="big">＋ New contact</button>
@@ -32,6 +33,7 @@
     <div id="pinned" class="grid"></div>
     <p id="count"></p>
     <p id="offline" class="muted">Preparing offline use…</p>
+    <footer><img id="footerImage" class="banner" alt="" hidden></footer>
   </section>
 
   <section id="videos" hidden>
@@ -64,6 +66,20 @@
     <label>Who is using this iPad<input data-setting="staff"></label>
     <label>Products or interests (separated by commas)<textarea data-setting="interests" rows="2"></textarea></label>
     <label>Consent sentence shown on the form<textarea data-setting="consent" rows="2"></textarea></label>
+    <fieldset class="picture" data-picture="header"><legend>Home header picture</legend>
+      <label class="button">Choose picture<input type="file" accept="image/*"></label>
+      <button type="button" class="remove" hidden>Remove picture</button>
+      <label class="slider">Transparency: <output>0%</output><input type="range" min="0" max="90" step="5" value="0"></label>
+      <img alt="Preview of the header picture" hidden>
+      <small>Shown above the event name. A wide image works best, for example 2000 × 400 pixels.</small>
+    </fieldset>
+    <fieldset class="picture" data-picture="footer"><legend>Home footer picture</legend>
+      <label class="button">Choose picture<input type="file" accept="image/*"></label>
+      <button type="button" class="remove" hidden>Remove picture</button>
+      <label class="slider">Transparency: <output>0%</output><input type="range" min="0" max="90" step="5" value="0"></label>
+      <img alt="Preview of the footer picture" hidden>
+      <small>Shown at the bottom of Home. A wide image works best, for example 2000 × 400 pixels.</small>
+    </fieldset>
     <p id="storage" class="muted"></p>
   </section>
 </main>

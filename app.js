@@ -4,7 +4,8 @@ import { toCSV, fromCSV, localDate } from './csv.js';
 const $ = selector => document.querySelector(selector);
 const DEFAULTS = {
   event: '', staff: '', interests: 'Product A, Product B, Product C',
-  consent: 'The visitor agrees to be contacted and to have this information stored.'
+  consent: 'The visitor agrees to be contacted and to have this information stored.',
+  headerFade: 0, footerFade: 0
 };
 let files = [];
 let contacts = [];
@@ -476,6 +477,73 @@ $('#importCsv').onchange = async e => {
   input.disabled = false;
 };
 
+/* ---------- Home header and footer pictures ---------- */
+// Each picture is stored with the id "header" or "footer".
+const pictureBoxes = [...document.querySelectorAll('[data-picture]')];
+
+function renderPictures() {
+  for (const box of pictureBoxes) {
+    const slot = box.dataset.picture;
+    const file = files.find(f => f.id === slot);
+    const fade = settings[slot + 'Fade'];
+    for (const image of [$(`#${slot}Image`), box.querySelector('img')]) {
+      if (file) image.src = urlFor(file); else image.removeAttribute('src');
+      image.hidden = !file;
+      image.style.opacity = 1 - fade / 100;
+    }
+    box.querySelector('.remove').hidden = !file;
+    box.querySelector('[type=range]').value = fade;
+    box.querySelector('output').textContent = fade + '%';
+  }
+}
+// A new picture reuses the same id, so forget the previous address.
+function forgetUrl(id) {
+  URL.revokeObjectURL(urls.get(id));
+  urls.delete(id);
+}
+
+async function choosePicture(slot, input) {
+  const source = input.files[0];
+  if (!source) return;
+  const test = URL.createObjectURL(source);
+  try {
+    // Check that it really is a picture before replacing the current one.
+    await Object.assign(new Image(), { src: test }).decode();
+    await put('files', { id: slot, kind: slot, name: source.name, blob: source });
+    const saved = await get('files', slot);
+    forgetUrl(slot);
+    files = [...files.filter(f => f.id !== slot), saved];
+    renderPictures();
+  } catch (error) {
+    showError(error.name === 'EncodingError' ? 'This file is not a picture the iPad can show.'
+      : 'Could not save the picture: ' + error.message);
+  } finally {
+    URL.revokeObjectURL(test);
+    input.value = '';
+  }
+}
+
+async function removePicture(slot) {
+  if (!confirm(`Remove the ${slot} picture?`)) return;
+  try {
+    await remove('files', slot);
+    files = files.filter(f => f.id !== slot);
+    forgetUrl(slot);
+    renderPictures();
+  } catch (error) { showError('Could not remove the picture: ' + error.message); }
+}
+
+for (const box of pictureBoxes) {
+  const slot = box.dataset.picture;
+  box.querySelector('[type=file]').onchange = e => choosePicture(slot, e.target);
+  box.querySelector('.remove').onclick = () => removePicture(slot);
+  box.querySelector('[type=range]').oninput = e => {
+    settings[slot + 'Fade'] = Number(e.target.value);
+    write('settings', settings);
+    renderPictures();
+  };
+}
+
 /* ---------- Settings and start ---------- */
 function applySettings() { $('#title').textContent = settings.event || 'Welcome'; }
 document.querySelectorAll('[data-setting]').forEach(input => {
@@ -515,6 +583,7 @@ async function start() {
     [files, contacts] = await Promise.all([getAll('files'), getAll('contacts')]);
     renderFiles();
     renderContacts();
+    renderPictures();
     document.body.dataset.ready = 'yes';
   } catch (error) {
     // Block editing so nothing is lost or overwritten.

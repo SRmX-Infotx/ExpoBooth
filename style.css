@@ -27,6 +27,12 @@ label { display:block; margin:10px 0; }
 .list { display:flex; flex-direction:column; gap:10px; margin-top:12px; }
 .row { display:flex; gap:8px; align-items:stretch; }
 .row .grow { flex:1; text-align:left; overflow-wrap:anywhere; }
+.banner { display:block; width:100%; max-height:280px; object-fit:contain; border-radius:16px; }
+#footerImage { margin-top:24px; }
+.picture { align-items:center; padding-bottom:12px; }
+.picture small, .picture .slider { width:100%; }
+.picture img { width:100%; max-height:140px; object-fit:contain; margin-bottom:8px; }
+input[type=range] { padding:0; border:0; background:none; min-height:44px; }
 .muted, small { color:var(--muted); }
 small { display:block; }
 .warn { color:#d97706; font-weight:600; }
